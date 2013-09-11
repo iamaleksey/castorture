@@ -1,0 +1,25 @@
+CAS Stress application
+======================
+
+A stress tool for Cassandra 2.0 CAS implementation, based on java-driver
+stress example (https://github.com/datastax/java-driver/tree/2.0/driver-examples/stress)
+and jepsen's cassandra-transacion app (https://github.com/aphyr/jepsen/blob/master/src/jepsen/cassandra.clj#L228-L290).
+
+Usage
+-----
+
+1. Install the java-driver, 2.0 branch, locally:
+    
+    git clone https://github.com/datastax/java-driver.git
+    git checkout 2.0
+    mvn install
+
+2. Build CAS Torturer
+    
+    ./bin/build
+
+3. Run the torturer
+    
+    ./bin/torture
+
+See ./bin/torture -h for more details on the options available.
