@@ -69,7 +69,7 @@ public class Torturer
 
         try
         {
-            Cluster cluster = new Cluster.Builder().addContactPoints(String.valueOf(options.valueOf("ip"))).build();
+            Cluster cluster = new Cluster.Builder().addContactPoints(ip).build();
             Session session = cluster.connect();
 
             setup(session);
@@ -146,8 +146,8 @@ public class Torturer
         }
 
         System.out.println(acked.size() / (double) numElements + " ack rate");
-        System.out.println((lost.isEmpty() ? 0.0 : lost.size() / (double) numElements) + " loss rate");
-        System.out.println((unacked.isEmpty() ? 0.0 : unacked.size() / (double) numElements) + " unacknowledged but successful rate");
+        System.out.println(lost.size() / (double) numElements + " loss rate");
+        System.out.println(unacked.size() / (double) numElements + " unacknowledged but successful rate");
     }
 
     private static class Updater
