@@ -25,8 +25,8 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 import com.datastax.driver.core.*;
-import com.datastax.driver.core.exceptions.DriverException;
 import com.datastax.driver.core.exceptions.NoHostAvailableException;
+import com.datastax.driver.core.exceptions.WriteTimeoutException;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 
 import joptsimple.OptionParser;
@@ -194,44 +194,55 @@ public class Torturer
 
             private void writeElement(int element)
             {
-                try
+                String current = null;
+                int tries = 0;
+                while (true) // if beaten, try again
                 {
-                    String current = session.execute(QueryBuilder.select("elements")
-                                                                 .from(KS, CF)
-                                                                 .where(eq("id", 0))
-                                                                 .setConsistencyLevel(ConsistencyLevel.QUORUM))
-                                            .one()
-                                            .getString("elements");
-                    int tries = 0;
-                    while (true) // if beaten, try again, up to 30 times.
+                    if (tries > maxRetries)
                     {
-                        if (tries > maxRetries)
-                        {
-                            System.out.println(element + " fail");
-                            break;
-                        }
-                        tries++;
-
-                        String next = current.equals("") ? String.valueOf(element) : current + ";" + element;
-                        Row result = session.execute(QueryBuilder.update(KS, CF)
-                                                                 .with(set("elements", next))
-                                                                 .where(eq("id", 0))
-                                                                 .onlyIf(eq("elements", current))
-                                                                 .setConsistencyLevel(ConsistencyLevel.QUORUM))
-                                            .one();
-
-                        if (result.getBool("[applied]"))
-                        {
-                            acked.add(element);
-                            System.out.println(element + " ok");
-                            break;
-                        }
-                        current = result.getString("elements");
+                        System.out.println(element + " fail");
+                        break;
                     }
-                }
-                catch (DriverException e)
-                {
-                    System.err.println("Error during query: " + e.getMessage());
+                    tries++;
+
+                    if (current == null)
+                    {
+                        current = session.execute(QueryBuilder.select("elements")
+                                                              .from(KS, CF)
+                                                              .where(eq("id", 0))
+                                                              .setConsistencyLevel(ConsistencyLevel.SERIAL))
+                                         .one()
+                                         .getString("elements");
+                    }
+
+                    if (Sets.newHashSet(current.split(";")).contains(String.valueOf(element)))
+                        break; // we've timed out, but have actually written the value successfully.
+
+                    String next = current.equals("") ? String.valueOf(element) : current + ";" + element;
+                    Row result;
+                    try
+                    {
+                        result = session.execute(QueryBuilder.update(KS, CF)
+                                                             .with(set("elements", next))
+                                                             .where(eq("id", 0))
+                                                             .onlyIf(eq("elements", current))
+                                                             .setConsistencyLevel(ConsistencyLevel.QUORUM))
+
+                                        .one();
+                    }
+                    catch (WriteTimeoutException e)
+                    {
+                        current = null;
+                        continue;
+                    }
+
+                    if (result.getBool("[applied]"))
+                    {
+                        acked.add(element);
+                        System.out.println(element + " ok");
+                        break;
+                    }
+                    current = result.getString("elements");
                 }
             }
         }
