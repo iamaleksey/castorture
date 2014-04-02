@@ -72,13 +72,13 @@ public class Torturer
             Cluster cluster = new Cluster.Builder().addContactPoints(ip).build();
             Session session = cluster.connect();
 
-            setup(session);
+            PreparedStatement update = setup(session);
 
             Set<Integer> acked = Sets.newConcurrentHashSet();
 
             List<Updater> updaters = new ArrayList<>(numUpdaters);
             for (int i = 0; i < numUpdaters; i++)
-                updaters.add(new Updater(session, queue, acked, retries));
+                updaters.add(new Updater(session, update, queue, acked, retries));
 
             long start = System.currentTimeMillis();
 
@@ -155,13 +155,15 @@ public class Torturer
         private final Runner runner = new Runner();
 
         private final Session session;
+        private final PreparedStatement update;
         private final Queue<Integer> queue;
         private final Set<Integer> acked;
         private final int maxRetries;
 
-        public Updater(Session session, Queue<Integer> queue, Set<Integer> acked, int maxRetries)
+        public Updater(Session session, PreparedStatement update, Queue<Integer> queue, Set<Integer> acked, int maxRetries)
         {
             this.session = session;
+            this.update = update;
             this.queue = queue;
             this.acked = acked;
             this.maxRetries = maxRetries;
@@ -222,13 +224,7 @@ public class Torturer
                     Row result;
                     try
                     {
-                        result = session.execute(QueryBuilder.update(KS, CF)
-                                                             .with(set("elements", next))
-                                                             .where(eq("id", 0))
-                                                             .onlyIf(eq("elements", current))
-                                                             .setConsistencyLevel(ConsistencyLevel.QUORUM))
-
-                                        .one();
+                        result = session.execute(update.bind(next, current)).one();
                     }
                     catch (WriteTimeoutException e)
                     {
@@ -248,7 +244,7 @@ public class Torturer
         }
     }
 
-    private static void setup(Session session)
+    private static PreparedStatement setup(Session session)
     {
         System.out.println("Creating schema and setting the initial elements value...");
         session.execute("DROP KEYSPACE IF EXISTS torture");
@@ -259,6 +255,11 @@ public class Torturer
                                     .values(new String[]{ "id", "elements" },
                                             new Object[]{ 0, "" })
                                     .setConsistencyLevel(ConsistencyLevel.QUORUM));
+        return session.prepare(QueryBuilder.update(KS, CF)
+                                           .with(set("elements", bindMarker()))
+                                           .where(eq("id", 0))
+                                           .onlyIf(eq("elements", bindMarker()))
+                                           .toString());
     }
 
     private static void printHelp()
